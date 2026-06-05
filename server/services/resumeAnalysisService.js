@@ -22,7 +22,12 @@ function extractBullets(text = "") {
 function computeNlpFeatures(textToAnalyze) {
   const bullets = extractBullets(textToAnalyze);
 
-  const weakPhrases = ["responsible for", "worked on", "helped with", "involved in"];
+  const weakPhrases = [
+    "responsible for",
+    "worked on",
+    "helped with",
+    "involved in",
+  ];
   const actionVerbs = [
     "built",
     "developed",
@@ -63,9 +68,10 @@ function computeNlpFeatures(textToAnalyze) {
       issues.push("Does not start with a strong action verb.");
     }
 
-    const hasMetric = /(\d+%|\d+\s?(ms|sec|seconds|mins|minutes|x|k|m|b|users|requests|rps))/i.test(
-      bullet
-    );
+    const hasMetric =
+      /(\d+%|\d+\s?(ms|sec|seconds|mins|minutes|x|k|m|b|users|requests|rps))/i.test(
+        bullet,
+      );
     if (hasMetric) {
       measurableImpactMentions += 1;
     } else {
@@ -87,10 +93,12 @@ function computeNlpFeatures(textToAnalyze) {
 
   const totalWords = bullets.reduce(
     (sum, b) => sum + b.split(/\s+/).filter(Boolean).length,
-    0
+    0,
   );
-  const avgWordsPerBullet = bullets.length > 0 ? totalWords / bullets.length : 0;
-  const actionVerbCoverage = bullets.length > 0 ? actionVerbHits / bullets.length : 0;
+  const avgWordsPerBullet =
+    bullets.length > 0 ? totalWords / bullets.length : 0;
+  const actionVerbCoverage =
+    bullets.length > 0 ? actionVerbHits / bullets.length : 0;
 
   return {
     actionVerbCoverage: Number(actionVerbCoverage.toFixed(2)),
@@ -154,13 +162,13 @@ async function processResumeAnalysis({
     jdMatch = matchResumeToJD(skills, jobDescription);
   }
 
-  // Existing base score behavior
   let ruleScore = scoreData.totalScore;
   if (jdMatch) {
-    ruleScore = Math.round(scoreData.totalScore * 0.7 + jdMatch.matchPercentage * 0.3);
+    ruleScore = Math.round(
+      scoreData.totalScore * 0.7 + jdMatch.matchPercentage * 0.3,
+    );
   }
 
-  // New AI enrichment step (placeholder in chunk 1)
   let aiInsights = {
     overallSummary: "",
     sectionFeedback: {
@@ -206,13 +214,17 @@ async function processResumeAnalysis({
     scoreBreakdown: scoreData.breakdown,
     quantification,
     wordCount,
+    sections,
+    skills,
+    nlpFeatures,
+    jdMatch,
   });
 
   const updatedResume = await Resume.findByIdAndUpdate(
     resumeId,
     {
       user: userId,
-      analysisVersion: "2.0-hybrid-foundation",
+      analysisVersion: "2.1-hybrid-evidence-feedback",
 
       fileName: originalName,
       extractedText: text,
@@ -246,7 +258,7 @@ async function processResumeAnalysis({
       errorMessage: null,
       processedAt: new Date(),
     },
-    { returnDocument: "after" }
+    { returnDocument: "after" },
   );
 
   if (!updatedResume) {

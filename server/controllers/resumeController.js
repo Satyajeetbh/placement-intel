@@ -12,12 +12,16 @@ const uploadResume = async (req, res) => {
       req.body?.analyzeWithAI === undefined
         ? false
         : String(req.body.analyzeWithAI).toLowerCase() === "true";
+    const compareToResumeId = req.body?.compareToResumeId
+      ? String(req.body.compareToResumeId).trim()
+      : null;
 
     const queuedJob = await enqueueResumeJob({
       userId: req.user.id,
       file: req.file,
       jobDescription,
       analyzeWithAI,
+      compareToResumeId,
     });
 
     return res.status(202).json({
@@ -26,6 +30,7 @@ const uploadResume = async (req, res) => {
       jobId: queuedJob.jobId,
       processingStatus: queuedJob.processingStatus,
       analyzeWithAI: queuedJob.analyzeWithAI,
+      previousResumeId: queuedJob.previousResumeId,
     });
   } catch (error) {
     const status = error.statusCode || 500;
@@ -33,7 +38,9 @@ const uploadResume = async (req, res) => {
       message:
         status === 429
           ? error.message
-          : "Failed to queue resume analysis",
+          : status === 400
+            ? error.message
+            : "Failed to queue resume analysis",
       error: error.message,
     });
   }
@@ -83,7 +90,7 @@ const getResumeHistory = async (req, res) => {
   try {
     const resumes = await Resume.find({ user: req.user.id })
       .select(
-        "fileName processingStatus finalScore processedAt createdAt updatedAt previousResumeId analyzeWithAI"
+        "fileName processingStatus finalScore processedAt createdAt updatedAt previousResumeId analyzeWithAI",
       )
       .sort({ createdAt: -1 });
 
@@ -109,11 +116,19 @@ const getResumeComparison = async (req, res) => {
       return res.status(404).json({ message: "Resume(s) not found" });
     }
 
-    const currentSkills = new Set((current.skills || []).map((s) => s.toLowerCase()));
-    const previousSkills = new Set((previous.skills || []).map((s) => s.toLowerCase()));
+    const currentSkills = new Set(
+      (current.skills || []).map((s) => s.toLowerCase()),
+    );
+    const previousSkills = new Set(
+      (previous.skills || []).map((s) => s.toLowerCase()),
+    );
 
-    const skillsAdded = [...currentSkills].filter((s) => !previousSkills.has(s));
-    const skillsRemoved = [...previousSkills].filter((s) => !currentSkills.has(s));
+    const skillsAdded = [...currentSkills].filter(
+      (s) => !previousSkills.has(s),
+    );
+    const skillsRemoved = [...previousSkills].filter(
+      (s) => !currentSkills.has(s),
+    );
 
     const currentQuantified = current.quantification?.quantified_bullets || 0;
     const previousQuantified = previous.quantification?.quantified_bullets || 0;
@@ -121,8 +136,10 @@ const getResumeComparison = async (req, res) => {
     const currentTotalBullets = current.quantification?.total_bullets || 0;
     const previousTotalBullets = previous.quantification?.total_bullets || 0;
 
-    const currentRuleScore = current.evaluation?.ruleScore ?? current.resumeScore ?? 0;
-    const previousRuleScore = previous.evaluation?.ruleScore ?? previous.resumeScore ?? 0;
+    const currentRuleScore =
+      current.evaluation?.ruleScore ?? current.resumeScore ?? 0;
+    const previousRuleScore =
+      previous.evaluation?.ruleScore ?? previous.resumeScore ?? 0;
 
     const currentAiScore = current.evaluation?.aiScore ?? 0;
     const previousAiScore = previous.evaluation?.aiScore ?? 0;

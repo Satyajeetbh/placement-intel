@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { ResumeComparison, ResumeHistoryItem, ResumeResult } from "@/types/resume";
-
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ResumeComparison,
+  ResumeHistoryItem,
+  ResumeResult,
+} from "@/types/resume";
 
 type AuthUser = {
   _id: string;
@@ -16,6 +19,12 @@ type UploadResponse = {
   resumeId: string;
   jobId: string;
   processingStatus: "queued" | "processing" | "completed" | "failed";
+  previousResumeId?: string | null;
+};
+
+type ResumeStatusResponse = {
+  processingStatus: "queued" | "processing" | "completed" | "failed";
+  errorMessage?: string;
 };
 
 type ProcessingStatus =
@@ -25,6 +34,14 @@ type ProcessingStatus =
   | "processing"
   | "completed"
   | "failed";
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallback;
+}
 
 export function useResumeAnalysis(user: AuthUser | null) {
   const [file, setFile] = useState<File | null>(null);
@@ -36,27 +53,30 @@ export function useResumeAnalysis(user: AuthUser | null) {
   const [resumeId, setResumeId] = useState("");
   const [processingStatus, setProcessingStatus] =
     useState<ProcessingStatus>("idle");
+  const [compareToResumeId, setCompareToResumeId] = useState("");
 
   const [history, setHistory] = useState<ResumeHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [comparison, setComparison] = useState<ResumeComparison | null>(null);
   const [comparisonLoading, setComparisonLoading] = useState(false);
   const [analyzeWithAI, setAnalyzeWithAI] = useState(
-  String(process.env.NEXT_PUBLIC_AI_DEFAULT_ENABLED || "false").toLowerCase() === "true"
-);
+    String(
+      process.env.NEXT_PUBLIC_AI_DEFAULT_ENABLED || "false",
+    ).toLowerCase() === "true",
+  );
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
-  const clearPolling = () => {
+  const clearPolling = useCallback(() => {
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
-  };
+  }, []);
 
-  const fetchResumeHistory = async () => {
+  const fetchResumeHistory = useCallback(async () => {
     if (!user) return;
 
     setHistoryLoading(true);
@@ -68,115 +88,146 @@ export function useResumeAnalysis(user: AuthUser | null) {
         },
       });
 
-      const data = await res.json();
+      const data = (await res.json()) as
+        | { message?: string }
+        | ResumeHistoryItem[];
 
       if (!res.ok) {
-        throw new Error(data.message || "Failed to fetch resume history");
+        throw new Error(
+          (data as { message?: string }).message ||
+            "Failed to fetch resume history",
+        );
       }
 
-      setHistory(data);
-    } catch (err: any) {
-      setError(err.message || "Failed to load resume history");
+      setHistory(data as ResumeHistoryItem[]);
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, "Failed to load resume history"));
     } finally {
       setHistoryLoading(false);
     }
-  };
+  }, [apiUrl, user]);
 
-  const fetchResumeComparison = async (currentId: string, previousId: string) => {
-    if (!user) return;
+  const fetchResumeComparison = useCallback(
+    async (currentId: string, previousId: string) => {
+      if (!user) return;
 
-    setComparisonLoading(true);
-    try {
-      const res = await fetch(`${apiUrl}/api/resume/${currentId}/compare/${previousId}`, {
+      setComparisonLoading(true);
+      try {
+        const res = await fetch(
+          `${apiUrl}/api/resume/${currentId}/compare/${previousId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${user.token}`,
+            },
+          },
+        );
+
+        const data = (await res.json()) as
+          | { message?: string }
+          | ResumeComparison;
+
+        if (!res.ok) {
+          throw new Error(
+            (data as { message?: string }).message ||
+              "Failed to fetch comparison",
+          );
+        }
+
+        setComparison(data as ResumeComparison);
+      } catch (error: unknown) {
+        setError(getErrorMessage(error, "Failed to load comparison"));
+        setComparison(null);
+      } finally {
+        setComparisonLoading(false);
+      }
+    },
+    [apiUrl, user],
+  );
+
+  const fetchResumeResult = useCallback(
+    async (id: string) => {
+      if (!user) return;
+
+      const res = await fetch(`${apiUrl}/api/resume/${id}`, {
         headers: {
           Authorization: `Bearer ${user.token}`,
         },
       });
 
-      const data = await res.json();
+      const data = (await res.json()) as { message?: string } | ResumeResult;
 
       if (!res.ok) {
-        throw new Error(data.message || "Failed to fetch comparison");
+        throw new Error(
+          (data as { message?: string }).message ||
+            "Failed to fetch resume result",
+        );
       }
 
-      setComparison(data);
-    } catch (err: any) {
-      setError(err.message || "Failed to load comparison");
+      const resumeData = data as ResumeResult;
+
+      setResumeId(id);
+      setResult(resumeData);
       setComparison(null);
-    } finally {
-      setComparisonLoading(false);
-    }
-  };
-
-  const fetchResumeResult = async (id: string) => {
-    if (!user) return;
-
-    const res = await fetch(`${apiUrl}/api/resume/${id}`, {
-      headers: {
-        Authorization: `Bearer ${user.token}`,
-      },
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data.message || "Failed to fetch resume result");
-    }
-
-    setResumeId(id);
-    setResult(data);
-    setComparison(null);
-    if (data?.previousResumeId) {
-      await fetchResumeComparison(id, data.previousResumeId);
-    }
-    setProcessingStatus(data.processingStatus || "completed");
-  };
-
-
-
-  const pollResumeStatus = (id: string) => {
-    clearPolling();
-
-    pollingRef.current = setInterval(async () => {
-      try {
-        if (!user) {
-          clearPolling();
-          return;
-        }
-
-        const res = await fetch(`${apiUrl}/api/resume/${id}/status`, {
-          headers: {
-            Authorization: `Bearer ${user.token}`,
-          },
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.message || "Failed to fetch status");
-        }
-
-        setProcessingStatus(data.processingStatus);
-
-        if (data.processingStatus === "completed") {
-          clearPolling();
-          await fetchResumeResult(id);
-          await fetchResumeHistory();
-        }
-
-        if (data.processingStatus === "failed") {
-          clearPolling();
-          setError(data.errorMessage || "Resume processing failed");
-          setProcessingStatus("failed");
-          await fetchResumeHistory();
-        }
-      } catch (err: any) {
-        clearPolling();
-        setError(err.message || "Status polling failed");
-        setProcessingStatus("failed");
+      if (resumeData.previousResumeId) {
+        await fetchResumeComparison(id, resumeData.previousResumeId);
       }
-    }, 2500);
-  };
+      setProcessingStatus(resumeData.processingStatus || "completed");
+    },
+    [apiUrl, fetchResumeComparison, user],
+  );
+
+  const pollResumeStatus = useCallback(
+    (id: string) => {
+      clearPolling();
+
+      pollingRef.current = setInterval(async () => {
+        try {
+          if (!user) {
+            clearPolling();
+            return;
+          }
+
+          const res = await fetch(`${apiUrl}/api/resume/${id}/status`, {
+            headers: {
+              Authorization: `Bearer ${user.token}`,
+            },
+          });
+
+          const data = (await res.json()) as
+            | { message?: string }
+            | ResumeStatusResponse;
+
+          if (!res.ok) {
+            throw new Error(
+              (data as { message?: string }).message ||
+                "Failed to fetch status",
+            );
+          }
+
+          const statusData = data as ResumeStatusResponse;
+          setProcessingStatus(statusData.processingStatus);
+
+          if (statusData.processingStatus === "completed") {
+            clearPolling();
+            await fetchResumeResult(id);
+            await fetchResumeHistory();
+          }
+
+          if (statusData.processingStatus === "failed") {
+            clearPolling();
+            setError(statusData.errorMessage || "Resume processing failed");
+            setProcessingStatus("failed");
+            await fetchResumeHistory();
+          }
+        } catch (error: unknown) {
+          clearPolling();
+          setError(getErrorMessage(error, "Status polling failed"));
+          setProcessingStatus("failed");
+        }
+      }, 2500);
+    },
+    [apiUrl, clearPolling, fetchResumeHistory, fetchResumeResult, user],
+  );
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -193,13 +244,15 @@ export function useResumeAnalysis(user: AuthUser | null) {
     setResumeId("");
     setProcessingStatus("uploading");
 
-
     try {
       const formData = new FormData();
       formData.append("analyzeWithAI", String(analyzeWithAI));
       formData.append("resume", file);
       if (jobDescription.trim()) {
         formData.append("jobDescription", jobDescription.trim());
+      }
+      if (compareToResumeId) {
+        formData.append("compareToResumeId", compareToResumeId);
       }
 
       const res = await fetch(`${apiUrl}/api/resume/upload`, {
@@ -210,7 +263,7 @@ export function useResumeAnalysis(user: AuthUser | null) {
         body: formData,
       });
 
-      const data: UploadResponse = await res.json();
+      const data = (await res.json()) as UploadResponse;
 
       if (!res.ok) {
         throw new Error(data.message || "Upload failed");
@@ -218,10 +271,11 @@ export function useResumeAnalysis(user: AuthUser | null) {
 
       setResumeId(data.resumeId);
       setProcessingStatus(data.processingStatus);
+      setCompareToResumeId("");
       await fetchResumeHistory();
       pollResumeStatus(data.resumeId);
-    } catch (err: any) {
-      setError(err.message || "Something went wrong");
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, "Something went wrong"));
       setProcessingStatus("failed");
     } finally {
       setIsUploading(false);
@@ -235,8 +289,8 @@ export function useResumeAnalysis(user: AuthUser | null) {
       setError("");
       setIsOpeningHistory(true);
       await fetchResumeResult(id);
-    } catch (err: any) {
-      setError(err.message || "Failed to open resume result");
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, "Failed to open resume result"));
     } finally {
       setIsOpeningHistory(false);
     }
@@ -245,19 +299,20 @@ export function useResumeAnalysis(user: AuthUser | null) {
   const clearSelectedFile = () => {
     setFile(null);
     setJobDescription("");
+    setCompareToResumeId("");
   };
 
   useEffect(() => {
     return () => {
       clearPolling();
     };
-  }, []);
+  }, [clearPolling]);
 
   useEffect(() => {
     if (user) {
       fetchResumeHistory();
     }
-  }, [user]);
+  }, [fetchResumeHistory, user]);
 
   return {
     file,
@@ -280,5 +335,7 @@ export function useResumeAnalysis(user: AuthUser | null) {
     comparisonLoading,
     analyzeWithAI,
     setAnalyzeWithAI,
+    compareToResumeId,
+    setCompareToResumeId,
   };
 }

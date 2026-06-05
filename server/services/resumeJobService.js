@@ -3,7 +3,9 @@ const resumeQueue = require("../queues/resumeQueue");
 
 function getUtcDayStart() {
   const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
 }
 
 async function enforceAiDailyQuota({ userId }) {
@@ -19,29 +21,51 @@ async function enforceAiDailyQuota({ userId }) {
   });
 
   if (countToday >= limit) {
-    const err = new Error(`AI daily limit reached (${limit}/day). Try again tomorrow or use non-AI mode.`);
+    const err = new Error(
+      `AI daily limit reached (${limit}/day). Try again tomorrow or use non-AI mode.`,
+    );
     err.statusCode = 429;
     throw err;
   }
 }
 
-async function enqueueResumeJob({ userId, file, jobDescription, analyzeWithAI = false }) {
-  const aiFeatureEnabled = String(process.env.AI_FEATURE_ENABLED || "false").toLowerCase() === "true";
+async function resolveComparisonTarget({ userId, compareToResumeId }) {
+  if (!compareToResumeId) return null;
 
-  // Force off if global switch is disabled
-  const finalAnalyzeWithAI = aiFeatureEnabled ? Boolean(analyzeWithAI) : false;
+  const previousResume = await Resume.findOne({
+    _id: compareToResumeId,
+    user: userId,
+    processingStatus: "completed",
+  }).select("_id");
 
-  // Quota check only if AI mode requested
-  if (finalAnalyzeWithAI) {
+  if (!previousResume) {
+    const err = new Error("Selected comparison resume was not found.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  return previousResume;
+}
+
+async function enqueueResumeJob({
+  userId,
+  file,
+  jobDescription,
+  analyzeWithAI = false,
+  compareToResumeId = null,
+}) {
+  const aiFeatureEnabled =
+    String(process.env.AI_FEATURE_ENABLED || "false").toLowerCase() === "true";
+
+  if (aiFeatureEnabled ? Boolean(analyzeWithAI) : false) {
     await enforceAiDailyQuota({ userId });
   }
 
-  const previousResume = await Resume.findOne({
-    user: userId,
-    processingStatus: "completed",
-  })
-    .sort({ createdAt: -1 })
-    .select("_id");
+  const finalAnalyzeWithAI = aiFeatureEnabled ? Boolean(analyzeWithAI) : false;
+  const previousResume = await resolveComparisonTarget({
+    userId,
+    compareToResumeId,
+  });
 
   const resumeDoc = await Resume.create({
     user: userId,
@@ -70,6 +94,7 @@ async function enqueueResumeJob({ userId, file, jobDescription, analyzeWithAI = 
     jobId: job.id,
     processingStatus: resumeDoc.processingStatus,
     analyzeWithAI: finalAnalyzeWithAI,
+    previousResumeId: resumeDoc.previousResumeId,
   };
 }
 

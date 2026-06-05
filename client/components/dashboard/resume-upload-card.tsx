@@ -1,14 +1,24 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
-  CardDescription,
 } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { FileText, UploadCloud, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ResumeHistoryItem } from "@/types/resume";
+import {
+  CheckCircle2,
+  FileText,
+  GitCompare,
+  Sparkles,
+  UploadCloud,
+  WandSparkles,
+  X,
+} from "lucide-react";
 
 type Props = {
   file: File | null;
@@ -20,9 +30,21 @@ type Props = {
   clearFile: () => void;
   analyzeWithAI: boolean;
   onAnalyzeWithAIChange: (value: boolean) => void;
+  compareToResumeId: string;
+  onCompareToResumeIdChange: (value: string) => void;
+  history?: ResumeHistoryItem[];
 };
 
 const MAX_FILE_SIZE_MB = 5;
+
+function formatHistoryLabel(item: ResumeHistoryItem) {
+  const date = new Date(
+    item.processedAt || item.createdAt,
+  ).toLocaleDateString();
+  const score =
+    typeof item.finalScore === "number" ? ` • Score ${item.finalScore}` : "";
+  return `${item.fileName || "Untitled resume"} • ${date}${score}`;
+}
 
 export default function ResumeUploadCard({
   file,
@@ -34,9 +56,17 @@ export default function ResumeUploadCard({
   clearFile,
   analyzeWithAI,
   onAnalyzeWithAIChange,
+  compareToResumeId,
+  onCompareToResumeIdChange,
+  history = [],
 }: Props) {
   const [dragActive, setDragActive] = useState(false);
   const [fileError, setFileError] = useState("");
+
+  const completedHistory = useMemo(
+    () => history.filter((item) => item.processingStatus === "completed"),
+    [history],
+  );
 
   const validateFile = (selectedFile: File | null) => {
     if (!selectedFile) return false;
@@ -98,15 +128,31 @@ export default function ResumeUploadCard({
 
   return (
     <Card className="rounded-3xl border-border shadow-sm">
-      <CardHeader className="space-y-2">
-        <CardTitle className="flex items-center gap-2">
-          <UploadCloud className="h-5 w-5 text-primary" />
-          Upload Resume
-        </CardTitle>
-        <CardDescription>
-          Upload a PDF resume to analyze sections, extracted skills, and
-          quantification strength.
-        </CardDescription>
+      <CardHeader className="space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+            <UploadCloud className="h-5 w-5" />
+          </div>
+          <div>
+            <CardTitle>Upload Resume</CardTitle>
+            <CardDescription>
+              Upload a PDF resume, optionally add a job description, and choose
+              whether to include AI guidance.
+            </CardDescription>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="secondary" className="rounded-full px-3 py-1">
+            PDF only
+          </Badge>
+          <Badge variant="secondary" className="rounded-full px-3 py-1">
+            Max {MAX_FILE_SIZE_MB} MB
+          </Badge>
+          <Badge variant="outline" className="rounded-full px-3 py-1">
+            Best with clear headings
+          </Badge>
+        </div>
       </CardHeader>
 
       <CardContent>
@@ -115,15 +161,17 @@ export default function ResumeUploadCard({
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-6 py-14 text-center transition ${
+            className={`flex cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed px-6 py-12 text-center transition ${
               dragActive
-                ? "border-primary bg-primary/10"
-                : "border-border bg-muted/30 hover:bg-muted"
+                ? "border-primary bg-primary/10 shadow-sm"
+                : "border-border bg-gradient-to-b from-muted/30 to-background hover:bg-muted/40"
             } ${loading ? "pointer-events-none opacity-70" : ""}`}
           >
-            <UploadCloud className="mb-4 h-10 w-10 text-primary" />
+            <div className="rounded-full bg-primary/10 p-4 text-primary">
+              <UploadCloud className="h-8 w-8" />
+            </div>
 
-            <span className="text-base font-semibold text-foreground">
+            <span className="mt-5 text-lg font-semibold text-foreground">
               Drag and drop your resume here
             </span>
 
@@ -131,9 +179,17 @@ export default function ResumeUploadCard({
               or click to browse from your device
             </span>
 
-            <span className="mt-1 text-xs text-muted-foreground">
-              PDF only • Max {MAX_FILE_SIZE_MB} MB
-            </span>
+            <div className="mt-4 flex flex-wrap justify-center gap-2 text-xs text-muted-foreground">
+              <span className="rounded-full border border-border bg-background px-3 py-1">
+                PDF only
+              </span>
+              <span className="rounded-full border border-border bg-background px-3 py-1">
+                Max {MAX_FILE_SIZE_MB} MB
+              </span>
+              <span className="rounded-full border border-border bg-background px-3 py-1">
+                Async analysis
+              </span>
+            </div>
 
             <input
               type="file"
@@ -153,15 +209,22 @@ export default function ResumeUploadCard({
           )}
 
           {file && (
-            <div className="flex items-start justify-between gap-4 rounded-xl border border-border bg-background px-4 py-3">
+            <div className="flex items-start justify-between gap-4 rounded-2xl border border-border bg-background px-4 py-4">
               <div className="flex items-start gap-3">
-                <FileText className="mt-0.5 h-5 w-5 text-primary" />
+                <div className="rounded-xl bg-primary/10 p-2 text-primary">
+                  <FileText className="h-5 w-5" />
+                </div>
                 <div>
-                  <p className="text-sm font-medium text-foreground">
-                    Selected file
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium text-foreground">
+                      {file.name}
+                    </p>
+                    <Badge variant="secondary" className="rounded-full">
+                      Ready to analyze
+                    </Badge>
+                  </div>
                   <p className="mt-1 break-all text-sm text-muted-foreground">
-                    {file.name} • {formatFileSize(file.size)}
+                    {formatFileSize(file.size)}
                   </p>
                 </div>
               </div>
@@ -178,61 +241,142 @@ export default function ResumeUploadCard({
             </div>
           )}
 
-          <div className="space-y-2">
-            <label
-              htmlFor="jobDescription"
-              className="text-sm font-medium text-foreground"
-            >
-              Job Description (optional)
-            </label>
+          <div className="space-y-3">
+            <div>
+              <label
+                htmlFor="jobDescription"
+                className="text-sm font-medium text-foreground"
+              >
+                Target Job Description (optional)
+              </label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Paste a job description to compare missing keywords and role
+                alignment.
+              </p>
+            </div>
 
             <textarea
               id="jobDescription"
               value={jobDescription}
               onChange={(e) => onJobDescriptionChange(e.target.value)}
-              placeholder="Paste a job description here to get role-specific keyword matching and missing-skill insights."
+              placeholder="Paste a job description here to unlock role-specific keyword matching and missing-skill insights."
               disabled={loading}
-              rows={6}
+              rows={5}
               className="w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:border-primary"
             />
-
-            <p className="text-xs text-muted-foreground">
-              Add a JD to compare your resume against a target role.
-            </p>
           </div>
-          <div className="rounded-2xl border border-border bg-muted/30 p-4">
-            <p className="text-sm font-medium text-foreground">Analysis Mode</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              AI mode gives rewritten bullets and AI suggestions. Non-AI mode
-              uses deterministic scoring only.
+
+          <div className="space-y-3 rounded-3xl border border-border bg-muted/30 p-4">
+            <div className="flex items-center gap-2">
+              <GitCompare className="h-4 w-4 text-primary" />
+              <p className="text-sm font-medium text-foreground">
+                Version Comparison (optional)
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Choose an earlier completed resume only when this upload is a
+              revised version of that same resume. Leave it empty for a
+              brand-new resume.
             </p>
 
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button
+            <select
+              value={compareToResumeId}
+              onChange={(e) => onCompareToResumeIdChange(e.target.value)}
+              disabled={loading || completedHistory.length === 0}
+              className="w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <option value="">Do not compare this upload</option>
+              {completedHistory.map((item) => (
+                <option key={item._id} value={item._id}>
+                  {formatHistoryLabel(item)}
+                </option>
+              ))}
+            </select>
+
+            {completedHistory.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Upload and complete at least one resume analysis before using
+                version comparison.
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-3xl border border-border bg-muted/30 p-4">
+            <div className="flex items-center gap-2">
+              <WandSparkles className="h-4 w-4 text-primary" />
+              <p className="text-sm font-medium text-foreground">
+                Analysis Mode
+              </p>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Choose between deterministic scoring only or AI-assisted feedback
+              with rewrite suggestions.
+            </p>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <button
                 type="button"
-                variant={analyzeWithAI ? "default" : "outline"}
                 onClick={() => onAnalyzeWithAIChange(true)}
                 disabled={loading}
+                className={`rounded-2xl border p-4 text-left transition ${
+                  analyzeWithAI
+                    ? "border-primary bg-primary/5 shadow-sm"
+                    : "border-border bg-background hover:bg-muted/40"
+                } ${loading ? "cursor-not-allowed opacity-70" : ""}`}
               >
-                Analyze with AI
-              </Button>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-foreground">
+                      Analyze with AI
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Includes priority actions, rewritten bullets, and AI
+                      summary.
+                    </p>
+                  </div>
+                  {analyzeWithAI ? (
+                    <CheckCircle2 className="h-5 w-5 text-primary" />
+                  ) : (
+                    <Sparkles className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </div>
+              </button>
 
-              <Button
+              <button
                 type="button"
-                variant={!analyzeWithAI ? "default" : "outline"}
                 onClick={() => onAnalyzeWithAIChange(false)}
                 disabled={loading}
+                className={`rounded-2xl border p-4 text-left transition ${
+                  !analyzeWithAI
+                    ? "border-primary bg-primary/5 shadow-sm"
+                    : "border-border bg-background hover:bg-muted/40"
+                } ${loading ? "cursor-not-allowed opacity-70" : ""}`}
               >
-                Analyze without AI
-              </Button>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-foreground">
+                      Analyze without AI
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Faster, deterministic scoring based only on built-in
+                      resume signals.
+                    </p>
+                  </div>
+                  {!analyzeWithAI ? (
+                    <CheckCircle2 className="h-5 w-5 text-primary" />
+                  ) : (
+                    <FileText className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </div>
+              </button>
             </div>
-            
           </div>
+
           <div className="flex flex-col gap-3 sm:flex-row">
             <Button
               type="submit"
               disabled={loading || !file}
-              className="sm:w-auto"
+              className="sm:w-auto rounded-full px-6"
             >
               {loading ? "Analyzing..." : "Upload Resume"}
             </Button>
@@ -243,6 +387,7 @@ export default function ResumeUploadCard({
                 variant="outline"
                 onClick={handleClearFile}
                 disabled={loading}
+                className="rounded-full"
               >
                 Clear file
               </Button>
