@@ -304,12 +304,12 @@ Potential next steps for the project:
 ## Screenshots
 
 ### Create Account
-![ResumeIntel create account screen](docs/screenshots/create-account.png)
+![Resume upload and dashboard flow](docs/screenshots/dashboard-upload.png)
 
 New users can create an account and start using the resume analysis dashboard in a simple, focused onboarding flow.
 
 ### Upload and Analysis Dashboard
-![Resume upload and dashboard flow](docs/screenshots/dashboard-upload.png)
+![ResumeIntel create account screen](docs/screenshots/create-account.png)
 
 Users can upload a PDF, optionally paste a job description, and choose AI or non-AI analysis mode from the main dashboard.
 
